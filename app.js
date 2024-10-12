@@ -1,46 +1,57 @@
-var createError = require('http-errors');
-var express = require('express');
-var path = require('path');
-var cookieParser = require('cookie-parser');
-var logger = require('morgan');
-const nunjucks = require('nunjucks');
+const express = require("express");
+const client = require("./db"); // Redis 클라이언트 가져오기
 
-var indexRouter = require('./routes/index');
-// var usersRouter = require('./routes/users');
+const app = express();
+const port = 8000;
 
-var app = express();
-
-// view engine setup
-app.set('views', path.join(__dirname, 'views'));
-app.set('view engine', 'njk');
-nunjucks.configure('views', { 
-  express: app,
-  watch: true,
+client.on("error", (err) => {
+  console.error("Redis error:", err);
 });
 
-app.use(logger('dev'));
-app.use(express.json());
-app.use(express.urlencoded({ extended: false }));
-app.use(cookieParser());
-app.use(express.static(path.join(__dirname, 'public')));
+// 현재 count 값을 가져오는 함수
+function getCount(callback) {
+  client.get("count", (err, count) => {
+    if (err) {
+      console.error("Redis GET error:", err);
+      return callback(0); // 오류 발생 시 기본값 0으로 처리
+    }
+    callback(parseInt(count) || 0); // count가 없으면 0으로 처리
+  });
+}
 
-app.use('/', indexRouter);
-// app.use('/users', usersRouter);
+// count 값을 저장하는 함수
+function saveCount(count) {
+  client.set("count", count, (err) => {
+    if (err) {
+      console.error("Redis SET error:", err);
+    }
+  });
+}
 
-// catch 404 and forward to error handler
-app.use(function(req, res, next) {
-  next(createError(404));
+// 현재 count 값을 반환하는 API
+app.get("/api/count", (req, res) => {
+  getCount((count) => {
+    res.json({ count });
+  });
 });
 
-// error handler
-app.use(function(err, req, res, next) {
-  // set locals, only providing error in development
-  res.locals.message = err.message;
-  res.locals.error = req.app.get('env') === 'development' ? err : {};
-
-  // render the error page
-  res.status(err.status || 500);
-  res.render('error');
+// count 값을 증가시키는 API
+app.post("/api/count", (req, res) => {
+  getCount((count) => {
+    if (count >= 21) {
+      res.json({
+        count,
+        message: "더 이상 당첨되지 않습니다.",
+      });
+    } else {
+      count += 1;
+      saveCount(count);
+      res.json({
+        count,
+        message: "축하합니다! 당첨되었습니다.",
+      });
+    }
+  });
 });
 
 module.exports = app;
